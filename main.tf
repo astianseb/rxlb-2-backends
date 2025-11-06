@@ -5,7 +5,7 @@ locals {
 }
 
 provider "google" {
-  region = var.region
+  #region = var.region
 }
 
 resource "random_id" "id" {
@@ -42,30 +42,27 @@ resource "google_compute_network" "vpc_network" {
 ####### VPC SUBNETS
 
 resource "google_compute_subnetwork" "sb-subnet-a" {
-  name          = "subnet-a"
+  name          = "${random_id.id.hex}-subnet-a"
   project       = data.google_project.producer.project_id
   ip_cidr_range = "10.10.20.0/24"
   network       = google_compute_network.vpc_network.id
+  region        = var.region_a
+
 }
 
 resource "google_compute_subnetwork" "sb-subnet-b" {
-  name          = "subnet-b"
+  name          = "${random_id.id.hex}-subnet-b"
   project       = data.google_project.producer.project_id
   ip_cidr_range = "10.10.40.0/24"
   network       = google_compute_network.vpc_network.id
+  region        = var.region_b
 }
 
-resource "google_compute_subnetwork" "sb-subnet-c" {
-  name          = "subnet-c"
-  project       = data.google_project.producer.project_id
-  ip_cidr_range = "10.10.50.0/24"
-  network       = google_compute_network.vpc_network.id
-}
 
 resource "google_compute_subnetwork" "proxy" {
-  name          = "proxy"
+  name          = "${random_id.id.hex}-proxy"
   project       = data.google_project.producer.project_id
-  region        = var.region
+  region        = var.region_a
   ip_cidr_range = "10.10.100.0/24"
   network       = google_compute_network.vpc_network.id
   purpose       = "REGIONAL_MANAGED_PROXY"
@@ -77,7 +74,7 @@ resource "google_compute_subnetwork" "proxy" {
 ####### FIREWALL
 
 resource "google_compute_firewall" "fw-allow-internal" {
-  name      = "allow-internal"
+  name      = "${random_id.id.hex}-allow-internal"
   project   = data.google_project.producer.project_id
   network   = google_compute_network.vpc_network.name
   direction = "INGRESS"
@@ -97,7 +94,7 @@ resource "google_compute_firewall" "fw-allow-internal" {
 }
 
 resource "google_compute_firewall" "fw-allow-ssh" {
-  name      = "allow-ssh"
+  name      = "${random_id.id.hex}-allow-ssh"
   project   = data.google_project.producer.project_id
   network   = google_compute_network.vpc_network.name
   direction = "INGRESS"
@@ -110,7 +107,7 @@ resource "google_compute_firewall" "fw-allow-ssh" {
 }
 
 resource "google_compute_firewall" "fw-app-allow-http" {
-  name      = "app-allow-http"
+  name      = "${random_id.id.hex}-app-allow-http"
   project   = data.google_project.producer.project_id
   network   = google_compute_network.vpc_network.name
   direction = "INGRESS"
@@ -124,7 +121,7 @@ resource "google_compute_firewall" "fw-app-allow-http" {
 }
 
 resource "google_compute_firewall" "fw-app-allow-health-check" {
-  name      = "app-allow-health-check"
+  name      = "${random_id.id.hex}-app-allow-health-check"
   project   = data.google_project.producer.project_id
   network   = google_compute_network.vpc_network.name
   direction = "INGRESS"
@@ -139,9 +136,11 @@ resource "google_compute_firewall" "fw-app-allow-health-check" {
 #### NAT
 
 resource "google_compute_router" "router" {
-  name    = "nat-router"
+  name    = "${random_id.id.hex}-nat-router"
   project = data.google_project.producer.project_id
   network = google_compute_network.vpc_network.id
+  region  = var.region_a
+
 
   bgp {
     asn = 64514
@@ -149,11 +148,14 @@ resource "google_compute_router" "router" {
 }
 
 resource "google_compute_router_nat" "nat" {
-  name                               = "my-router-nat"
+  name                               = "${random_id.id.hex}-router-nat"
   project                            = data.google_project.producer.project_id
   router                             = google_compute_router.router.name
   nat_ip_allocate_option             = "AUTO_ONLY"
   source_subnetwork_ip_ranges_to_nat = "ALL_SUBNETWORKS_ALL_IP_RANGES"
+  region                             = var.region_a
+
+  
 
   log_config {
     enable = true
@@ -185,6 +187,7 @@ resource "google_compute_instance_template" "tmpl-instance-group-1" {
   machine_type         = "e2-medium"
   can_ip_forward       = false
   tags                 = ["lb-backend"]
+  region               = var.region_a
 
   scheduling {
     preemptible       = true
@@ -221,7 +224,7 @@ resource "google_compute_instance_template" "tmpl-instance-group-1" {
 resource "google_compute_instance_group_manager" "grp-instance-group-1" {
   name               = "${random_id.id.hex}-ig-1"
   project            = data.google_project.producer.project_id
-  base_instance_name = "mig-a"
+  base_instance_name = "${random_id.id.hex}-mig-a"
   zone               = local.zone-b
   version {
     instance_template = google_compute_instance_template.tmpl-instance-group-1.id
@@ -255,81 +258,82 @@ resource "google_compute_autoscaler" "obj-my-autoscaler-a" {
 }
 
 
-//----------------Instance Group B
+# //----------------Instance Group B
 
-resource "google_compute_instance_template" "tmpl-instance-group-2" {
-  name                 = "${random_id.id.hex}-ig-2"
-  project              = data.google_project.producer.project_id
-  description          = "SG instance group of preemptible hosts"
-  instance_description = "description assigned to instances"
-  machine_type         = "e2-medium"
-  can_ip_forward       = false
-  tags                 = ["lb-backend"]
+# resource "google_compute_instance_template" "tmpl-instance-group-2" {
+#   name                 = "${random_id.id.hex}-ig-2"
+#   project              = data.google_project.producer.project_id
+#   description          = "SG instance group of preemptible hosts"
+#   instance_description = "description assigned to instances"
+#   machine_type         = "e2-medium"
+#   can_ip_forward       = false
+#   tags                 = ["lb-backend"]
+#   region               = var.region_b
 
-  scheduling {
-    preemptible       = true
-    automatic_restart = false
+#   scheduling {
+#     preemptible       = true
+#     automatic_restart = false
 
-  }
+#   }
 
-  disk {
-    source_image = "debian-cloud/debian-11"
-    auto_delete  = true
-    boot         = true
-  }
+#   disk {
+#     source_image = "debian-cloud/debian-11"
+#     auto_delete  = true
+#     boot         = true
+#   }
 
-  network_interface {
-    network            = google_compute_network.vpc_network.name
-    subnetwork         = google_compute_subnetwork.sb-subnet-b.name
-    subnetwork_project = data.google_project.producer.project_id
-  }
-  shielded_instance_config {
-    enable_secure_boot          = true
-    enable_vtpm                 = true
-    enable_integrity_monitoring = true
-  }
+#   network_interface {
+#     network            = google_compute_network.vpc_network.name
+#     subnetwork         = google_compute_subnetwork.sb-subnet-b.name
+#     subnetwork_project = data.google_project.producer.project_id
+#   }
+#   shielded_instance_config {
+#     enable_secure_boot          = true
+#     enable_vtpm                 = true
+#     enable_integrity_monitoring = true
+#   }
   
-  metadata = {
-    startup-script-url = "https://raw.githubusercontent.com/astianseb/sg-helper-scripts/refs/heads/main/startup.sh"
-    #startup-script-url = "gs://cloud-training/gcpnet/ilb/startup.sh"
-  }
-}
+#   metadata = {
+#     startup-script-url = "https://raw.githubusercontent.com/astianseb/sg-helper-scripts/refs/heads/main/startup.sh"
+#     #startup-script-url = "gs://cloud-training/gcpnet/ilb/startup.sh"
+#   }
+# }
 
-resource "google_compute_instance_group_manager" "grp-instance-group-2" {
-  name               = "${random_id.id.hex}-ig-2"
-  project            = data.google_project.producer.project_id
-  base_instance_name = "mig-b"
-  zone               = local.zone-c
-  version {
-    instance_template = google_compute_instance_template.tmpl-instance-group-2.id
-  }
+# resource "google_compute_instance_group_manager" "grp-instance-group-2" {
+#   name               = "${random_id.id.hex}-ig-2"
+#   project            = data.google_project.producer.project_id
+#   base_instance_name = "${random_id.id.hex}-mig-b"
+#   zone               = local.zone-c
+#   version {
+#     instance_template = google_compute_instance_template.tmpl-instance-group-2.id
+#   }
 
-  auto_healing_policies {
-    health_check      = google_compute_region_health_check.tcp-health-check.id
-    initial_delay_sec = 300
-  }
-  named_port {
-    name = "sg-https"
-    port = 443
-  }
-}
+#   auto_healing_policies {
+#     health_check      = google_compute_region_health_check.tcp-health-check.id
+#     initial_delay_sec = 300
+#   }
+#   named_port {
+#     name = "sg-https"
+#     port = 443
+#   }
+# }
 
-resource "google_compute_autoscaler" "obj-my-autoscaler-b" {
-  name    = "${random_id.id.hex}-autoscaler-b"
-  project = data.google_project.producer.project_id
-  zone    = local.zone-c
-  target  = google_compute_instance_group_manager.grp-instance-group-2.id
+# resource "google_compute_autoscaler" "obj-my-autoscaler-b" {
+#   name    = "${random_id.id.hex}-autoscaler-b"
+#   project = data.google_project.producer.project_id
+#   zone    = local.zone-c
+#   target  = google_compute_instance_group_manager.grp-instance-group-2.id
 
-  autoscaling_policy {
-    max_replicas    = 5
-    min_replicas    = 1
-    cooldown_period = 45
+#   autoscaling_policy {
+#     max_replicas    = 5
+#     min_replicas    = 1
+#     cooldown_period = 45
 
-    cpu_utilization {
-      target = 0.8
-    }
-  }
-}
+#     cpu_utilization {
+#       target = 0.8
+#     }
+#   }
+# }
 
 
 # reserved IP address
@@ -391,6 +395,7 @@ resource "tls_self_signed_cert" "producer" {
 
 resource "google_compute_region_ssl_certificate" "producer" {
   project     = data.google_project.producer.project_id
+  region      = var.region_a
   name_prefix = "${random_id.id.hex}"
   private_key = tls_private_key.producer.private_key_pem
   certificate = tls_self_signed_cert.producer.cert_pem
@@ -444,7 +449,7 @@ resource "google_compute_region_url_map" "default" {
 # backend service with custom request and response headers
 resource "google_compute_region_backend_service" "ab" {
   name                     = "backend-service-ab"
-  provider                 = google-beta
+ # provider                 = google-beta
   region                   = var.region
   project                  = data.google_project.producer.project_id
   protocol                 = "HTTPS"
@@ -460,59 +465,59 @@ resource "google_compute_region_backend_service" "ab" {
     balancing_mode  = "UTILIZATION"
     capacity_scaler = 1.0
   }
-  backend {
-    group           = google_compute_instance_group_manager.grp-instance-group-2.instance_group
-    balancing_mode  = "UTILIZATION"
-    capacity_scaler = 1.0
-  }
+  # backend {
+  #   group           = google_compute_instance_group_manager.grp-instance-group-2.instance_group
+  #   balancing_mode  = "UTILIZATION"
+  #   capacity_scaler = 1.0
+  # }
 }
 
 
-# Instance to host siege (testing tool for LB)
-# usage: siege -i --concurrent=50 http://<lb-ip>
+# # Instance to host siege (testing tool for LB)
+# # usage: siege -i --concurrent=50 http://<lb-ip>
 
 
-resource "google_compute_instance" "siege-host" {
-  name         = "${random_id.id.hex}-siege-host"
-  machine_type = "e2-medium"
-  zone         = local.zone-b
-  project      = data.google_project.producer.project_id
+# resource "google_compute_instance" "siege-host" {
+#   name         = "${random_id.id.hex}-siege-host"
+#   machine_type = "e2-medium"
+#   zone         = local.zone-b
+#   project      = data.google_project.producer.project_id
 
-  tags = ["siege"]
+#   tags = ["siege"]
 
-  boot_disk {
-    initialize_params {
-      image = "debian-cloud/debian-11"
-    }
-  }
+#   boot_disk {
+#     initialize_params {
+#       image = "debian-cloud/debian-11"
+#     }
+#   }
 
-  network_interface {
-    network    = google_compute_network.vpc_network.name
-    subnetwork = google_compute_subnetwork.sb-subnet-b.self_link
-  }
+#   network_interface {
+#     network    = google_compute_network.vpc_network.name
+#     subnetwork = google_compute_subnetwork.sb-subnet-b.self_link
+#   }
 
-  scheduling {
-    preemptible       = true
-    automatic_restart = false
-  }
+#   scheduling {
+#     preemptible       = true
+#     automatic_restart = false
+#   }
 
-  metadata = {
-    enable-oslogin = true
-  }
+#   metadata = {
+#     enable-oslogin = true
+#   }
 
-  shielded_instance_config {
-    enable_secure_boot          = true
-    enable_vtpm                 = true
-    enable_integrity_monitoring = true
-  }
+#   shielded_instance_config {
+#     enable_secure_boot          = true
+#     enable_vtpm                 = true
+#     enable_integrity_monitoring = true
+#   }
 
-  metadata_startup_script = <<-EOF1
-      #! /bin/bash
-      set -euo pipefail
+#   metadata_startup_script = <<-EOF1
+#       #! /bin/bash
+#       set -euo pipefail
 
-      export DEBIAN_FRONTEND=noninteractive
-      apt-get update
-      apt-get install -y siege
-     EOF1
+#       export DEBIAN_FRONTEND=noninteractive
+#       apt-get update
+#       apt-get install -y siege
+#      EOF1
 
-}
+# }
